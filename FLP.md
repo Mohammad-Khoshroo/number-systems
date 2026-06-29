@@ -1,70 +1,49 @@
-Here is the complete English version of your document, with the hierarchical table of contents and identical Mermaid diagrams and formatting maintained:
-
----
-
-# Floating-Point Number System (FLP)
+# Floating-Point Representation (FLP) System
 
 ## Table of Contents
 
-- [Floating-Point Number System (FLP)](#floating-point-number-system-flp)
+- [Floating-Point Representation (FLP) System](#floating-point-representation-flp-system)
   - [Table of Contents](#table-of-contents)
-  - [Introduction: Why Floating-Point?](#introduction-why-floating-point)
-  - [Fundamentals of Binary Representation](#fundamentals-of-binary-representation)
+  - [Introduction](#introduction)
   - [The IEEE 754 Standard Structure](#the-ieee-754-standard-structure)
-    - [Sign Bit: $(-1)^s$](#sign-bit--1s)
-    - [Exponent Field: $2^{e - e\_{max}}$](#exponent-field-2e---e_max)
-    - [Mantissa Field: $\\left(1 + \\dfrac{m}{2^{ms}}\\right)$](#mantissa-field-left1--dfracm2msright)
-    - [Common Formats](#common-formats)
-  - [Normalization and the Implicit Bit (The Core Trick)](#normalization-and-the-implicit-bit-the-core-trick)
-    - [Decimal Example](#decimal-example)
-    - [Binary Example](#binary-example)
-    - [Why is this Ingenious?](#why-is-this-ingenious)
-  - [The Concept of Bias in Exponents](#the-concept-of-bias-in-exponents)
-    - [RTL Datapath for Floating - 1$$](#rtl-datapath-for-floating---1)
+  - [Special Values and Denormal Numbers](#special-values-and-denormal-numbers)
   - [Floating-Point Multiplication (Hardware)](#floating-point-multiplication-hardware)
-    - [RTL Datapath for Floating-Point Multiplier](#rtl-datapath-for-floating-point-multiplier)
   - [Floating-Point Addition (Hardware)](#floating-point-addition-hardware)
-    - [RTL Datapath for Floating-Point Adder](#rtl-datapath-for-floating-point-adder)
   - [FPU Hardware Architecture](#fpu-hardware-architecture)
-  - [Complexity of FLP32 and Its Limitations](#complexity-of-flp32-and-its-limitations)
   - [Alternative Formats for DNN Architectures](#alternative-formats-for-dnn-architectures)
-    - [A) Low-Precision Floating-Point Formats](#a-low-precision-floating-point-formats)
-    - [B) Fixed-Point / Integer Formats](#b-fixed-point--integer-formats)
-    - [C) Specialized Formats](#c-specialized-formats)
-    - [Overall Comparison](#overall-comparison)
   - [Software Layer: Quantization](#software-layer-quantization)
 
 ---
 
-## Introduction: Why Floating-Point?
+## Introduction
 
-At the lowest level, computers only process `0`s and `1`s. The fundamental question is:
+At the lowest hardware layer, computers process only $0$ and $1$. The fundamental question is:
 
-> How do we represent numbers like $3.14$, $0.0000125$, or $1,250,000,000$ using only bits?
+> How can we store real numbers like $3.14$, $0.0000125$, or $1{,}250{,}000{,}000$ using only binary bits?
 
 There are two primary approaches:
 
 ```mermaid
 flowchart TD
-    A[Real Number Representation in Computers] --> B[Fixed-Point]
+    A["Real Number Representation in Computers"] --> B[Fixed-Point]
     A --> C[Floating-Point]
-    B --> B1["Fixed decimal point position<br/>Small range, simple hardware"]
-    C --> C1["Dynamic/Floating decimal point position<br/>Vast range, complex hardware"]
+    B --> B1["Radix point position is fixed<br/>Small range, simple hardware"]
+    C --> C1["Radix point position floats<br/>Enormous range, more complex hardware"]
 ```
 
-The core concept behind floating-point numbers is "scientific notation". Just as we write in base 10:
+The core concept of floating-point arithmetic is scientific notation. Just as we write in base $10$:
 
 $$1250 = 1.25 \times 10^{3}$$
 
-Computers do exactly the same thing, but in **base 2**:
+Computers do the exact same thing, but in **base $2$**:
 
 $$5.5_{(10)} = 101.1_{(2)} = 1.011 \times 2^{2}$$
 
+Every floating-point number consists of three basic components:
+
 ---
 
-## Fundamentals of Binary Representation
-
-Every floating-point number consists of three distinct components:
+## The IEEE 754 Standard Structure
 
 ```mermaid
 ---
@@ -87,108 +66,105 @@ flowchart LR
 ```
 
 | Component | Symbol | Function |
-| :--- | :--- | :--- |
+| :--- | :---: | :--- |
 | Sign | $s$ | Determines if the number is positive or negative |
-| Exponent | $e$ | Represents the magnitude of the number / position of the point |
-| Mantissa / Fraction | $m$ | Represents the significant digits of the number |
+| Exponent | $e$ | Determines the scale of the number / radix point position |
+| Mantissa (Fraction) | $m$ | Represents the precision bits of the number |
 
----
+The general formula to calculate a normalized floating-point number is:
 
-## The IEEE 754 Standard Structure
+$$n = (-1)^{s} \times 2^{\,e - \text{bias}} \times \left(1 + \frac{m}{2^{ms}}\right)$$
 
-The complete formula used to represent floating-point numbers (Reference: "FLP addition" and "Multiplication of two FLP numbers" slides) is:
+Let us examine each component in detail:
 
-$$n = (-1)^{s} \times 2^{\,e - e_{max}} \times \left(1 + \frac{m}{2^{ms}}\right)$$
+### Sign Bit: 
+$$(-1)^s$$
+- If $s = 0$: the number is positive.
+- If $s = 1$: the number is negative.
 
-Let us break down each component:
+### Exponent Field: 
+Determines the position of the radix point. Since the actual exponent can be negative (for extremely small numbers), a constant offset called **$\text{bias}$** is added. This ensures that the exponent is always stored as an unsigned integer, avoiding the need for an extra sign bit for the exponent itself.
 
-### Sign Bit: $(-1)^s$
-- If $s = 0$ → $(-1)^0 = +1$ (Positive number)
-- If $s = 1$ → $(-1)^1 = -1$ (Negative number)
+$$\text{bias} = 2^{\,es-1} - 1$$
 
-### Exponent Field: $2^{e - e_{max}}$
-Determines where the binary point is shifted. $e_{max}$ acts as the **Bias** (explained in detail in Section 5).
+Where $es$ is the number of bits in the exponent field. For example, in $FP32$ where $es = 8$:
 
-### Mantissa Field: $\left(1 + \dfrac{m}{2^{ms}}\right)$
-The "$1+$" prefix in the formula represents the **implicit/hidden bit**. Here, $ms$ is the total number of bits allocated to the mantissa.
+$$\text{bias} = 2^{7} - 1 = 127$$
 
-### Common Formats
+Thus, if the actual exponent is $+3$, it is stored in memory as $3 + 127 = 130$. If the actual exponent is $-5$, it is stored as $-5 + 127 = 122$. This bias representation makes comparing the magnitudes of two floating-point numbers much faster and simpler for the processor.
 
-| Format | Total Bits | Sign | Exponent | Mantissa | Bias ($e_{max}$) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| FP32 | 32 | 1 | 8 | 23 | 127 |
-| FP16 | 16 | 1 | 5 | 10 | 15 |
-| bfloat16 | 16 | 1 | 8 | 7 | 127 |
+### Mantissa (Fraction) Field: 
+$$\left(1 + \dfrac{m}{2^{ms}}\right)$$
 
----
+The "$1+$" term in the formula represents the **hidden bit** (or implicit leading bit). $ms$ denotes the total number of bits allocated to the mantissa field.
 
-## Normalization and the Implicit Bit (The Core Trick)
+During a process called **normalization**, we force the number into a format where there is exactly one non-zero digit to the left of the radix point. In base $10$:
 
-This is where most learners get confused: **Why is there always a leading $1$ before the mantissa fraction?**
+$$450 \;\xrightarrow{\text{Normalization}}\; 4.5 \times 10^2$$
 
-Key explanation: This is not an inherent trait of the number itself; **we force the number to start with a leading 1.** This process is called **Normalization**.
+In binary (base $2$), since the only non-zero digit available is $1$, the digit to the left of the radix point **is always $1$**:
 
-### Decimal Example
-The number $450$ can be represented in various scientific formats:
-
-$$45 \times 10^1 \quad=\quad 0.45 \times 10^3 \quad=\quad \underbrace{4.5 \times 10^2}_{\text{Normalized Form}}$$
-
-The normalization rule for scientific notation states: there must be exactly one non-zero digit to the left of the decimal point.
-
-### Binary Example
-In binary, the only possible digits are `0` and `1`. Therefore, the only non-zero digit that can sit to the left of the binary point **is always 1**:
-
-$$101.1_{(2)} \;\xrightarrow{\text{Shift 2 positions left}}\; 1.011 \times 2^{2}$$
+$$101.1_{(2)} \;\xrightarrow{\text{Shift Radix Point}}\; 1.011 \times 2^{2}$$
 
 ```mermaid
 flowchart LR
-    A["Raw Number<br/>101.1"] --> B["Shift binary point left<br/>until only a single 1 remains"]
+    A["Raw Number<br/>101.1"] --> B["Shift radix point left<br/>until a single 1 remains"]
     B --> C["Normalized Form<br/>1.011 × 2^2"]
-    C --> D["Since the leading digit is always 1,<br/>we do not need to store it!"]
-    D --> E["One free bit is gained<br/>= Higher precision"]
+    C --> D["Since the leading bit is always 1,<br/>we don't store it!"]
+    D --> E["One free bit gained<br/>= Higher Precision"]
 ```
 
-### Why is this Ingenious?
-By agreeing that the number is always formatted as $1.xxxx$, the leading `1` remains constant and does not need to be stored in memory. The hardware automatically appends it back during computation. This yields **one free extra bit of precision**.
-
-> This is the key difference compared to simpler models. In models without the hidden bit ($n = (-1)^s \times 2^e \times m$), the mantissa is stored as $0.xxxx$. This is simpler to implement but provides lower precision for the same bit-width.
+Since the leading bit is implicitly known to be $1$ by convention, we do not waste memory storing it. The hardware automatically inserts this hidden $1$ during computations. This design choice grants **one extra bit of precision for free**.
 
 ---
 
-## The Concept of Bias in Exponents
+### Common Formats, Range, and Precision
 
-Exponents can be negative (for extremely small values like_B} \times 2^{(e_A + e_B - e_{max})} \times (M_A \times M_B)$$
+The number of bits assigned to the exponent determines the dynamic range, while the number of bits in the mantissa determines the precision of the fractional representation.
 
-Note: The sign bit of the product is simply calculated using an **XOR** gate.
+| Format | Total Bits | Sign | Exponent | Mantissa | Bias | Approx. Precision (Decimal) | Approximate Range |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **FP32** | $32$ | $1$ | $8$ | $23$ | $127$ | $\approx 7$ digits | $1.4 \times 10^{-45}$ to $3.4 \times 10^{38}$ |
+| **FP16** | $16$ | $1$ | $5$ | $10$ | $15$ | $\approx 3.3$ digits | $6.1 \times 10^{-5}$ to $6.5 \times 10^{4}$ |
+| **bfloat16** | $16$ | $1$ | $8$ | $7$ | $127$ | $\approx 2.1$ digits | $1.2 \times 10^{-38}$ to $3.4 \times 10^{38}$ |
 
-### RTL Datapath for Floating - 1$$
+---
 
-For FP32 where $es = 8$ (exponent bits):
+## Special Values and Denormal Numbers
 
-$$e_{max} = 2^{7} - 1 = 127$$
+The $IEEE\ 754$ standard defines special bit patterns to represent non-numeric states, infinity, and extremely small numbers:
 
-Thus:
-- A real exponent of $+3$ is stored as $3 + 127 = 130$.
-- A real exponent of $-5$ is stored as $-5 + 127 = 122$.
+### 1. Signed Zeros ($\pm 0$)
+When all exponent bits and all mantissa bits are $0$, the value represented is zero. Depending on the sign bit $s$, we can have $+0$ or $-0$.
+* **Condition:** $\text{Exponent} = 0$ and $\text{Mantissa} = 0$
 
-This technique eliminates negative exponents in hardware registers, allowing the processor to compare the magnitude of floating-point numbers using fast integer comparators.
+### 2. Denormalized / Subnormal Numbers
+When a number is too small to be represented using the minimum normalized exponent, it becomes denormalized. Here, the exponent bits are all zero, but the mantissa is non-zero. 
+For denormal numbers, **the implicit hidden bit is assumed to be $0$ instead of $1$**. This prevents abrupt underflows (Sudden Underflow) and enables a gradual transition to zero (Gradual Underflow).
+* **Condition:** $\text{Exponent} = 0$ and $\text{Mantissa} \neq 0$
+* **Formula:** 
+
+$$n = (-1)^{s} \times 2^{\,1 - \text{bias}} \times \left(0 + \frac{m}{2^{ms}}\right)$$
+
+### 3. Infinity ($\pm \infty$)
+Used to represent values that overflow the maximum representable limit, such as dividing a non-zero number by zero.
+* **Condition:** All exponent bits are $1$ ($\text{Exponent} = 255$ in $FP32$) and $\text{Mantissa} = 0$
+
+### 4. Not a Number (NaN)
+Represents mathematically undefined or invalid operations, such as $\frac{0}{0}$ or $\infty - \infty$.
+* **Condition:** All exponent bits are $1$ ($\text{Exponent} = 255$ in $FP32$) and $\text{Mantissa} \neq 0$
 
 ---
 
 ## Floating-Point Multiplication (Hardware)
 
-Reference: "Multiplication of two FLP numbers" slide. The operations are:
+1. Add the exponents of the two operands and subtract the $\text{bias}$ value to maintain the offset representation.
+2. Multiply the mantissas (including the implicit leading $1$).
+3. Normalize the resulting mantissa (shifting left or right as necessary).
+4. Adjust the exponent based on any normalization shifts.
+5. Determine the sign of the product using an $XOR$ operation on the sign bits of the input operands.
 
-1. Adding their exponents
-2. Multiplying the mantissas
-3. Normalizing the resultant mantissa
-4. Adjusting the exponent
-
-Mathematically, for two numbers $A$ and $B$:
-
-$$A \times B = (-1)^{s_A \oplus s_B} \times 2^{(e_A + e_B - e_{max})} \times (M_A \times M_B)$$
-
-Note: The sign bit of the product is simply calculated using an **XOR** gate.
+$$A \times B = (-1)^{s_A \oplus s_B} \times 2^{(e_A + e_B - \text{bias})} \times (M_A \times M_B)$$
 
 ### RTL Datapath for Floating-Point Multiplier
 
@@ -197,7 +173,7 @@ flowchart TD
     A["Input A:<br/>sA, eA, mA"] 
     B["Input B:<br/>sB, eB, mB"]
 
-    A -->|sA| X1["XOR Gate"]
+    A -->|sA| X1["XOR"]
     B -->|sB| X1
     X1 --> SR["Result Sign"]
 
@@ -208,31 +184,27 @@ flowchart TD
     B -->|"1.mB"| MM
 
     MM --> NORM["Normalizer<br/>Shift + Overflow Detect"]
-    EA --> ADJ["Exponent Adjust<br/>+1 if normalization shifted"]
+    EA --> ADJ["Exponent Adjust<br/>+1 if normalization is needed"]
     NORM -->|carry/shift| ADJ
 
-    NORM --> RND["Rounding Unit"]
-    SR --> PACK["Output Packer"]
+    NORM --> RND["Rounding"]
+    SR --> PACK["Pack Final Result"]
     ADJ --> PACK
     RND --> PACK
     PACK --> OUT["Output: sR, eR, mR"]
 ```
 
-Floating-point multiplication is relatively "simpler" than addition because it does not require operand alignment.
-
 ---
 
 ## Floating-Point Addition (Hardware)
 
-Reference: "FLP addition" slide. The steps are:
+Addition is significantly more complex than multiplication because the operands must be aligned to have the same exponent before their mantissas can be added.
 
-1. Comparing the operand exponents
-2. Shifting their mantissas (alignment)
-3. Adding the aligned mantissas
-4. Normalizing the sum
-5. Adjusting the sum exponent
-
-Addition is **computationally complex** because operands must be aligned to the same exponent before adding. You cannot directly add $1.5 \times 2^3$ to $1.2 \times 2^1$ without first shifting the decimal point of the smaller number.
+1. Calculate the difference between the two exponents.
+2. Shift the mantissa of the smaller number to the right by the difference in exponents so that both numbers share the same exponent (Alignment).
+3. Add or subtract the aligned mantissas depending on the sign bits.
+4. Normalize the resulting mantissa (using a Leading-Zero Counter to determine the exact number of shifts required).
+5. Adjust the exponent and apply the rounding mode.
 
 ### RTL Datapath for Floating-Point Adder
 
@@ -241,7 +213,7 @@ flowchart TD
     A["A: eA, mA"]
     B["B: eB, mB"]
 
-    A -->|eA| CMP["Exponent Comparator<br/>d = eA - eB"]
+    A -->|eA| CMP["Exponent Compare<br/>eA - eB"]
     B -->|eB| CMP
 
     CMP -->|d = difference| SHIFT["Right Shifter<br/>Shift smaller mantissa by d bits"]
@@ -251,72 +223,43 @@ flowchart TD
     CMP -->|max| EMAX["Select Larger Exponent"]
 
     SHIFT --> ADD["Mantissa Adder<br/>Add aligned mantissas"]
-    ADD --> LZ["Leading-Zero Counter<br/>Count leading zeros for normalization"]
-    LZ --> NSHIFT["Normalize Shifter<br/>Perform left/right shifts"]
+    ADD --> LZ["Leading-Zero Counter<br/>Count leading zeros"]
+    LZ --> NSHIFT["Normalize Shifter<br/>Shift left/right"]
     EMAX --> EADJ["Exponent Adjust"]
-    LZ -->|shift count| EADJ
+    LZ -->|Shift Amount| EADJ
 
-    NSHIFT --> RND["Rounding Unit"]
-    EADJ --> PACK["Packer"]
+    NSHIFT --> RND["Rounding"]
+    EADJ --> PACK["Pack"]
     RND --> PACK
     PACK --> OUT["Final Output"]
-```
-
-A comparison of complexity:
-
-```mermaid
-flowchart LR
-    M["FLP Multiplication"] --> M1["No alignment required<br/>Medium complexity"]
-    AD["FLP Addition"] --> A1["Requires alignment + leading-zero detection<br/>High complexity"]
 ```
 
 ---
 
 ## FPU Hardware Architecture
 
-Due to the extreme complexity of these multi-stage operations (especially addition with its alignment and normalization steps), processors delegate these computations to a dedicated co-processor block called the **Floating Point Unit (FPU)**.
+Because floating-point arithmetic is hardware-intensive, processors offload these tasks to a dedicated co-processor unit known as the **FPU (Floating Point Unit)**.
 
 ```mermaid
 flowchart TD
-    CPU["Main CPU Core / Integer ALU"] <--> FPU["FPU<br/>Floating Point Unit"]
+    CPU["CPU Core / Integer ALU"] <--> FPU["FPU<br/>Floating Point Unit"]
     FPU --> FADD["Adder/Subtractor"]
     FPU --> FMUL["Multiplier"]
     FPU --> FDIV["Divider"]
-    FPU --> FMA["Fused Multiply-Add Unit"]
+    FPU --> FMA["Fused Multiply-Add"]
 ```
 
-While FPUs are highly optimized, they carry a high cost: significant silicon area, high power dissipation, and multiple clock cycles of latency.
-
----
-
-## Complexity of FLP32 and Its Limitations
-
-Reference: "Complexity of the FLP32 arithmetic" slide. Key limitations include:
-
-- The high hardware overhead of FLP32 operations demands dedicated FPUs.
-- Elevated power consumption and design footprint make standard FLP32 modules impractical for resource-constrained embedded systems, such as FPGAs.
-- Consequently, standard FLP32 is rarely used for hardware implementations of Deep Neural Network (DNN) engines.
-
-```mermaid
-flowchart TD
-    A["Standard FLP32"] --> B["Requires Complex FPU"]
-    B --> C["High Power Consumption"]
-    B --> D["Large Silicon Area / Cost"]
-    C --> E["Unsuited for Edge & FPGA deployment"]
-    D --> E
-    E --> F["Need for lightweight alternatives in DNNs"]
-```
-
-Deep learning models are inherently resilient to low-magnitude rounding errors and noise, which negates the need for the high precision that FP32 provides.
+While the FPU accelerates floating-point calculations, it comes at a high cost: significant silicon area, high power consumption, and longer propagation delays. This makes native $FP32$ units less suitable for resource-constrained Edge AI or high-efficiency hardware accelerators.
 
 ---
 
 ## Alternative Formats for DNN Architectures
 
+Deep Neural Networks (DNNs) exhibit high error-tolerance (noise resilience). Consequently, specialized hardware architectures employ reduced-precision numeric formats to optimize throughput and power efficiency.
+
 ### A) Low-Precision Floating-Point Formats
 
-**bfloat16 (Brain Floating Point):**
-Developed by Google for TPUs. It preserves the same dynamic range as FP32 by allocating 8 bits to the exponent, while reducing the mantissa to 7 bits.
+In the $16$-bit domain, the two main formats are $FP16$ and $bfloat16$. While $FP16$ provides higher precision, $bfloat16$ keeps an $8$-bit exponent (matching $FP32$), which ensures that model training remains stable by avoiding sudden underflow or overflow.
 
 ```mermaid
 ---
@@ -346,49 +289,42 @@ flowchart LR
     end
 ```
 
-Key trade-off: FP16 provides higher precision with a narrower dynamic range; bfloat16 offers a wide dynamic range with lower precision. For training large models (like LLMs), range stability is more critical than decimal precision to avoid gradient explosion or vanish, making bfloat16 highly popular.
+### B) Fixed-Point and Integer Formats
 
-**FP8:** A modern standard utilized in newer GPUs. It uses only 8 bits total, targeting ultra-fast inference and low-power training schemes.
+In fixed-point arithmetic, the radix point's position is static, allowing computations to run on simple, low-power integer ALUs.
+* **INT8:** The current standard for model inference on Edge and mobile processors.
+* **INT4 / Binary / Ternary:** Extreme quantization where weights are restricted to highly compressed values like $\{-1, +1\}$ or $\{-1, 0, +1\}$.
 
-### B) Fixed-Point / Integer Formats
+### C) Comprehensive Comparison of Numeric Formats
 
-- **INT8:** The gold standard for model deployment and inference on mobile and Edge computing systems.
-- **INT4 / Binary / Ternary:** Extreme compression schemes. Binary Neural Networks restrict weights and activations to simple $\{-1, +1\}$ configurations, turning complex math into simple logic gates.
-
-### C) Specialized Formats
-
-- **Logarithmic Number System (LNS):** Numbers are stored in logarithmic form, which simplifies multiplication by turning it into addition (minimizing hardware costs).
-- **Posit (Unum):** A dynamic floating-point standard designed to replace IEEE 754 by adjusting exponent/mantissa allocation dynamically to maximize precision around specific ranges.
-
-### Overall Comparison
-
-| Format | Total Bits | Dynamic Range | Precision | Main Application |
-| :--- | :---: | :---: | :---: | :--- |
-| FP32 | 32 | Very Large | High | General-purpose computing |
-| FP16 | 16 | Medium | Medium | Deep learning training / Inference |
-| bfloat16 | 16 | Very Large | Low | LLM training |
-| FP8 | 8 | Small | Low | Accelerating AI inference |
-| INT8 | 8 | Fixed | Quantized | Embedded systems / Mobile Edge |
+| Format | Total Bits | Dynamic Range | Relative Precision | Hardware Complexity (FPU/ALU) | Primary Application |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **FP32** | $32$ | Extremely Large | Very High | Very High | Scientific computing / Primary Training |
+| **FP16** | $16$ | Small | High | Moderate | Mid-scale training & inference |
+| **bfloat16** | $16$ | Extremely Large | Moderate | Moderate | Large Language Model (LLM) Training |
+| **FP8** | $8$ | Very Small | Low | Very Low | Ultra-fast inference & modern FP8 training |
+| **INT8** | $8$ | Fixed | Moderate | Extremely Low | Edge AI & mobile model inference |
+| **INT4** | $4$ | Extremely Small | Low | Minimal | Ultra-compressed on-device models |
 
 ---
 
 ## Software Layer: Quantization
 
-To execute models on low-power hardware, high-precision FP32 parameters are mapped to low-bit formats.
+Quantization is the process of mapping continuous, high-precision floating-point values ($FP32$) to discrete, lower-precision fixed-point or integer values (like $INT8$).
 
 ```mermaid
 flowchart LR
-    A["Trained FP32 Model"] --> B{Quantization Method}
+    A["Trained Model<br/>FP32"] --> B{Quantization Method}
     B --> C["Post-Training Quantization<br/>(PTQ)"]
     B --> D["Quantization-Aware Training<br/>(QAT)"]
-    C --> E["Target: INT8 / FP16"]
-    D --> F["Target: INT4 / Binary"]
-    E --> G["Deploy to Mobile / Edge hardware"]
+    C --> E["INT8 / FP16"]
+    D --> F["INT4 / Binary"]
+    E --> G["Deployment on Edge / Mobile"]
     F --> G
 ```
 
-Linear mapping equation from FP32 to INT8:
+The standard linear mapping of a float value $x_{float}$ to an integer $x_{int}$ is defined as:
 
 $$x_{int} = \text{round}\!\left(\frac{x_{float}}{\text{scale}}\right) + \text{zero\_point}$$
 
-Quantization drastically reduces model size and memory bandwidth requirements with negligible loss in accuracy, which explains why standard FLP32 is deprecated for DNN execution.
+Where the $\text{scale}$ parameter scales the range of values, and the $\text{zero\_point}$ maps real zero to a representative integer in the target range. This software technique reduces the model size by up to $75\%$ and drastically increases execution speeds with minimal impact on accuracy.
